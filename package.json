@@ -1,0 +1,14 @@
+{
+  "name": "lan-file-explorer",
+  "version": "1.0.0",
+  "description": "Cross-platform LAN file sharing server with web file explorer",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "account": "node manage-account.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
