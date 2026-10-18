@@ -1,10 +1,11 @@
 [
   {
     "username": "admin",
-    "salt": "28d491d64d8264e7b89454a62e2d86ce",
-    "hash": "45379c2ce2e94ef62f69a9729e989f8fc15b14aa1394d0b5f81e82f598985f535ca4ff59da41074bfe503c7899f967bc8c824fd77bfb6101f8518586746352ee",
+    "salt": "b68930a9ce506f2e35b6908821c1e15d",
+    "hash": "5c7623af9bcf8bd56240d7af72e86ec3e8f656e310be61db6364fbd667d775bfa79114602f581abf81c8e2c9f1b7ca58335243eb1a68bca6ece14d3df73e5e88",
     "role": "admin",
     "allowedDirs": [],
-    "createdAt": "2026-10-17T14:31:38.257Z"
+    "createdAt": "2026-10-17T14:31:38.257Z",
+    "updatedAt": "2026-10-18T12:45:17.966Z"
   }
 ]
