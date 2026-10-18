@@ -119,11 +119,10 @@ function isSubPathOrEqual(target, allowed) {
 }
 
 // Cek apakah target subpath adalah leluhur (parent) dari allowed subpath
-// Diperlukan agar user bisa bernavigasi dari root menuju folder yang diizinkan
 function isAncestorOf(target, allowed) {
   const t = normalizeRelPath(target);
   const a = normalizeRelPath(allowed);
-  if (t === '') return true;
+  if (t === '') return false;
   return a.startsWith(t + '/');
 }
 
@@ -136,36 +135,36 @@ function checkUserPermission(user, targetSubPath, action = 'read') {
   if (user.role === 'blocked') return false;
 
   const target = normalizeRelPath(targetSubPath);
-  const allowedDirs = (user.allowedDirs || []).map(normalizeRelPath);
+  const allowedDirs = (user.allowedDirs || []).map(normalizeRelPath).filter(Boolean);
 
   switch (user.role) {
     case 'admin':
-      // Admin memiliki akses penuh read & write di semua direktori
       return true;
 
     case 'read_only':
-      // Hanya bisa read di semua direktori, write ditolak
       return action === 'read';
 
     case 'dir_read_only':
-      // Hanya bisa read di direktori tertentu saja
       if (action !== 'read') return false;
+      // Jika root '/', izinkan hanya sebagai wadah listing folder yang diizinkan (jika ada lebih dari 1 allowed dirs)
+      if (target === '') return allowedDirs.length > 0;
       return allowedDirs.some(dir => isSubPathOrEqual(target, dir) || isAncestorOf(target, dir));
 
     case 'dir_read_write':
-      // Bisa read & write hanya di direktori tertentu
       if (action === 'read') {
+        if (target === '') return allowedDirs.length > 0;
         return allowedDirs.some(dir => isSubPathOrEqual(target, dir) || isAncestorOf(target, dir));
       }
       if (action === 'write') {
+        if (target === '') return false; // Dilarang menulis di root jika dibatasi direktori
         return allowedDirs.some(dir => isSubPathOrEqual(target, dir));
       }
       return false;
 
     case 'read_all_write_dir':
-      // Bisa membaca semua direktori, tetapi hanya bisa menulis (upload/edit/hapus) di direktori tertentu
       if (action === 'read') return true;
       if (action === 'write') {
+        if (target === '') return false;
         return allowedDirs.some(dir => isSubPathOrEqual(target, dir));
       }
       return false;

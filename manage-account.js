@@ -465,16 +465,204 @@ async function handleDeleteUser() {
   await pause();
 }
 
+// ─── TRAFFIC LOG VIEWER ───────────────────────────────────────────────────────
+const LOG_FILE = path.resolve(__dirname, 'traffic.log');
+
+const ACTION_COLORS = {
+  LOGIN:          '\x1b[32m', // hijau
+  LOGOUT:         '\x1b[90m', // abu
+  UPLOAD:         '\x1b[34m', // biru
+  UNDUH:          '\x1b[36m', // cyan
+  BUKA_FILE:      '\x1b[37m', // putih
+  BUKA_FOLDER:    '\x1b[37m', // putih
+  BUAT_FOLDER:    '\x1b[34m', // biru
+  'SALIN (Copy)': '\x1b[33m', // kuning
+  'PINDAHKAN (Cut)': '\x1b[33m',
+  'PINDAHKAN (Move)': '\x1b[33m',
+  HAPUS:          '\x1b[31m', // merah
+  VIEW_INFO:      '\x1b[35m', // ungu
+  AKSES_FILE:     '\x1b[31m', // merah
+};
+
+const STATUS_COLORS = {
+  SUCCESS:  '\x1b[32m',
+  FAILED:   '\x1b[31m',
+  BLOCKED:  '\x1b[31m',
+  CANCELED: '\x1b[33m',
+};
+
+function padEnd(str, len) {
+  const s = String(str || '');
+  return s.length >= len ? s.substring(0, len) : s + ' '.repeat(len - s.length);
+}
+
+function formatTrafficTime(isoStr) {
+  try {
+    const d = new Date(isoStr);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  } catch {
+    return isoStr || '-';
+  }
+}
+
+function renderTrafficTable(entries, title = 'LALU LINTAS PENGGUNA') {
+  renderHeader();
+  console.log(`\x1b[1m\x1b[33m─── ${title} ───\x1b[0m`);
+  console.log(`\x1b[90mTotal entri: ${entries.length}\x1b[0m\n`);
+
+  if (entries.length === 0) {
+    console.log('\x1b[33mBelum ada catatan lalu lintas.\x1b[0m\n');
+    return;
+  }
+
+  // Header tabel
+  const hWaktu  = padEnd('WAKTU', 19);
+  const hUser   = padEnd('USERNAME', 14);
+  const hIp     = padEnd('IP', 15);
+  const hAksi   = padEnd('AKSI', 20);
+  const hDetail = 'DETAIL / KETERANGAN';
+  console.log(`\x1b[1m\x1b[90m  ${hWaktu}  ${hUser}  ${hIp}  ${hAksi}  ${hDetail}\x1b[0m`);
+  console.log(`\x1b[90m  ${'─'.repeat(19)}  ${'─'.repeat(14)}  ${'─'.repeat(15)}  ${'─'.repeat(20)}  ${'─'.repeat(40)}\x1b[0m`);
+
+  for (const entry of entries) {
+    const waktu  = padEnd(formatTrafficTime(entry.timestamp), 19);
+    const user   = padEnd(entry.username, 14);
+    const ip     = padEnd(entry.ip, 15);
+    const aksi   = padEnd(entry.action, 20);
+    const detail = (entry.details || '-').substring(0, 70);
+    const status = entry.status && entry.status !== 'SUCCESS' ? ` [${entry.status}]` : '';
+
+    const ac = ACTION_COLORS[entry.action] || '\x1b[37m';
+    const sc = STATUS_COLORS[entry.status] || '';
+
+    console.log(`  \x1b[90m${waktu}\x1b[0m  \x1b[1m${user}\x1b[0m  \x1b[36m${ip}\x1b[0m  ${ac}${aksi}\x1b[0m  \x1b[37m${detail}\x1b[0m${sc ? sc + status + '\x1b[0m' : ''}`);
+  }
+  console.log('');
+}
+
+function readTrafficLog(maxEntries = 100) {
+  try {
+    if (!fs.existsSync(LOG_FILE)) return [];
+    const raw = fs.readFileSync(LOG_FILE, 'utf8');
+    const lines = raw.trim().split('\n').filter(Boolean);
+    const parsed = [];
+    for (const line of lines) {
+      try { parsed.push(JSON.parse(line)); } catch {}
+    }
+    // Kembalikan N entri terakhir
+    return parsed.slice(-maxEntries);
+  } catch {
+    return [];
+  }
+}
+
+async function handleViewTraffic() {
+  while (true) {
+    const action = await selectMenu('Lalu Lintas Pengguna (Traffic Log):', [
+      { label: '100 Aktivitas Terbaru', value: '100', desc: 'Tampilkan 100 entri terakhir dari log' },
+      { label: '500 Aktivitas Terbaru', value: '500', desc: 'Tampilkan 500 entri terakhir dari log' },
+      { label: 'Semua Aktivitas',        value: 'all', desc: 'Tampilkan seluruh riwayat (bisa panjang!)' },
+      { label: 'Filter per Username',    value: 'filter_user', desc: 'Tampilkan aktivitas pengguna tertentu' },
+      { label: 'Filter per Aksi',        value: 'filter_action', desc: 'Contoh: LOGIN, UNDUH, HAPUS, dll' },
+      { label: 'Hapus Semua Log',        value: 'clear', desc: '⚠ Ini akan menghapus seluruh riwayat secara permanen' },
+      { label: '← Kembali ke Menu Utama', value: '__back__' }
+    ]);
+
+    if (!action || action === '__back__') return;
+
+    if (action === '100' || action === '500' || action === 'all') {
+      const max = action === 'all' ? Infinity : parseInt(action, 10);
+      const entries = max === Infinity
+        ? readTrafficLog(999999)
+        : readTrafficLog(max);
+      renderTrafficTable(entries, `${max === 999999 ? 'SEMUA' : max} AKTIVITAS TERBARU`);
+      await pause();
+      continue;
+    }
+
+    if (action === 'filter_user') {
+      renderHeader();
+      const uname = await ask('Masukkan username yang ingin dicari: ');
+      if (!uname.trim()) continue;
+      const all = readTrafficLog(999999);
+      const filtered = all.filter(e => (e.username || '').toLowerCase().includes(uname.toLowerCase()));
+      renderTrafficTable(filtered, `AKTIVITAS USER: ${uname} (${filtered.length} entri)`);
+      await pause();
+      continue;
+    }
+
+    if (action === 'filter_action') {
+      renderHeader();
+      console.log('\x1b[90mAksi yang tersedia: LOGIN, LOGOUT, UPLOAD, UNDUH, BUKA_FILE, BUKA_FOLDER, BUAT_FOLDER, HAPUS, SALIN (Copy), PINDAHKAN (Move), VIEW_INFO\x1b[0m\n');
+      const aksi = await ask('Masukkan nama aksi yang ingin dicari: ');
+      if (!aksi.trim()) continue;
+      const all = readTrafficLog(999999);
+      const filtered = all.filter(e => (e.action || '').toLowerCase().includes(aksi.toLowerCase()));
+      renderTrafficTable(filtered, `FILTER AKSI: ${aksi} (${filtered.length} entri)`);
+      await pause();
+      continue;
+    }
+
+    if (action === 'clear') {
+      renderHeader();
+      console.log('\x1b[1m\x1b[31m⚠  HAPUS SEMUA LOG LALU LINTAS ⚠\x1b[0m\n');
+      console.log('\x1b[31mSeluruh riwayat aktivitas pengguna akan dihapus permanen!\x1b[0m\n');
+      const conf = await ask('Ketik "HAPUS" untuk konfirmasi: ');
+      if (conf === 'HAPUS') {
+        try {
+          fs.writeFileSync(LOG_FILE, '', 'utf8');
+          console.log('\n\x1b[32m✔ Semua log lalu lintas berhasil dihapus.\x1b[0m');
+        } catch (err) {
+          console.log(`\n\x1b[31m✖ Gagal menghapus log: ${err.message}\x1b[0m`);
+        }
+      } else {
+        console.log('\n\x1b[33mKonfirmasi tidak cocok. Log tidak dihapus.\x1b[0m');
+      }
+      await pause();
+      continue;
+    }
+  }
+}
+
+// ─── MAIN MENU ─────────────────────────────────────────────────────────────
+async function handleStartServer() {
+  renderHeader();
+  console.log('\x1b[1m\x1b[33m─── JALANKAN SERVER ───\x1b[0m\n');
+  console.log('\x1b[37mServer akan dijalankan di latar belakang terminal ini.\x1b[0m');
+  console.log('\x1b[90mGunakan Ctrl+C untuk menghentikan server saat berjalan.\x1b[0m\n');
+  const { execSync } = require('child_process');
+  const confirm = await ask('Tekan Enter untuk menjalankan server (atau ketik "batal" untuk membatalkan): ');
+  if (confirm.toLowerCase() === 'batal') return;
+  console.log('\n\x1b[32m▶  Menjalankan: node server.js\x1b[0m\n');
+  try {
+    // Jalankan server di proses yang sama (blocking) sehingga Ctrl+C menghentikannya
+    const { spawnSync } = require('child_process');
+    const result = spawnSync('node', ['server.js'], {
+      cwd: __dirname,
+      stdio: 'inherit',
+      env: process.env
+    });
+    if (result.error) console.log('\n\x1b[31m✖ Gagal menjalankan server: ' + result.error.message + '\x1b[0m');
+    else console.log('\n\x1b[33mServer dihentikan.\x1b[0m');
+  } catch (err) {
+    console.log('\n\x1b[31m✖ Error: ' + err.message + '\x1b[0m');
+  }
+  await pause();
+}
+
 async function main() {
   while (true) {
     const action = await selectMenu('Menu Utama:', [
-      { label: 'Lihat Daftar Akun', value: 'list' },
-      { label: 'Tambah Akun Baru', value: 'add' },
-      { label: 'Ubah Hak Akses Akun', value: 'role' },
-      { label: 'Ganti Password Akun', value: 'password' },
-      { label: 'Ubah Username Akun', value: 'username' },
-      { label: 'Hapus Akun', value: 'delete' },
-      { label: 'Keluar', value: 'exit' }
+      { label: '▶  Jalankan Server',                        value: 'start',   desc: 'Mulai LAN File Server di port 3000' },
+      { label: '👥 Lihat Daftar Akun',                      value: 'list',    desc: 'Tampilkan semua akun pengguna terdaftar' },
+      { label: '➕ Tambah Akun Baru',                        value: 'add',     desc: 'Daftarkan pengguna baru dengan role tertentu' },
+      { label: '🔐 Ubah Hak Akses Akun',                    value: 'role',    desc: 'Ubah role dan direktori yang diizinkan' },
+      { label: '🔑 Ganti Password Akun',                     value: 'password',desc: 'Reset password pengguna' },
+      { label: '✏  Ubah Username Akun',                     value: 'username',desc: 'Ganti nama login pengguna' },
+      { label: '🗑  Hapus Akun',                             value: 'delete',  desc: 'Hapus akun pengguna secara permanen' },
+      { label: '📊 Lalu Lintas Pengguna (Traffic Log)',      value: 'traffic', desc: 'Lihat riwayat aktivitas semua pengguna' },
+      { label: '🚪 Keluar',                                  value: 'exit' }
     ]);
 
     if (!action || action === 'exit') {
@@ -484,12 +672,14 @@ async function main() {
     }
 
     switch (action) {
+      case 'start':    await handleStartServer(); break;
       case 'list':     await handleListUsers(); break;
       case 'add':      await handleAddUser(); break;
       case 'role':     await handleChangeRole(); break;
       case 'password': await handleChangePassword(); break;
       case 'username': await handleChangeUsername(); break;
       case 'delete':   await handleDeleteUser(); break;
+      case 'traffic':  await handleViewTraffic(); break;
     }
   }
 }
